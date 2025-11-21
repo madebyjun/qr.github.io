@@ -15,7 +15,10 @@ DISPLAY_INTERVAL_MS = 200      # QR切り替え速度（ミリ秒）
 # ==========================================
 
 def create_chunks(data):
-    # データをBase64化してバイナリセーフにする
+    # ハッシュ値を計算 (SHA-256)
+    file_hash = hashlib.sha256(data.encode('utf-8')).hexdigest()
+    print(f"Original Hash (SHA-256): {file_hash}") # コンソール確認用
+
     b64_data = base64.b64encode(data.encode('utf-8')).decode('utf-8')
     total_length = len(b64_data)
     total_chunks = math.ceil(total_length / CHUNK_SIZE)
@@ -26,12 +29,12 @@ def create_chunks(data):
         end = start + CHUNK_SIZE
         chunk_data = b64_data[start:end]
         
-        # 順序がバラバラに読み込まれても大丈夫なようにJSON化
-        # i: index, t: total, d: data
+        # ペイロードにハッシュ値(h)を追加
         payload = json.dumps({
             "i": i,
             "t": total_chunks,
-            "d": chunk_data
+            "d": chunk_data,
+            "h": file_hash 
         })
         chunks.append(payload)
     return chunks
