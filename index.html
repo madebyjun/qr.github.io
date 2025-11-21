@@ -31,19 +31,23 @@
     <button onclick="copyToClipboard()">Copy Data</button>
 
     <script>
-        let receivedChunks = {};
+let receivedChunks = {};
         let totalChunks = 0;
         let isComplete = false;
+        let expectedHash = ""; // 正解のハッシュ値を保存する変数
 
         function onScanSuccess(decodedText, decodedResult) {
             if (isComplete) return;
 
             try {
                 const data = JSON.parse(decodedText);
-                // 期待するフォーマット: { i: index, t: total, d: data_chunk }
+                // フォーマット: { i: index, t: total, d: data, h: hash }
                 
                 if (data.i !== undefined && data.t !== undefined && data.d !== undefined) {
-                    if (totalChunks === 0) totalChunks = data.t;
+                    if (totalChunks === 0) {
+                        totalChunks = data.t;
+                        expectedHash = data.h; // 最初のパケットからハッシュを取得
+                    }
                     
                     if (!receivedChunks[data.i]) {
                         receivedChunks[data.i] = data.d;
@@ -51,7 +55,6 @@
                     }
                 }
             } catch (e) {
-                // JSONじゃないQRは無視
                 console.log("Invalid QR format");
             }
         }
@@ -59,7 +62,6 @@
         function updateProgress() {
             const count = Object.keys(receivedChunks).length;
             document.getElementById('chunk-info').innerText = `${count} / ${totalChunks} chunks`;
-            
             const percent = (count / totalChunks) * 100;
             document.getElementById('progress').style.width = percent + "%";
 
@@ -68,30 +70,52 @@
             }
         }
 
-        function assembleData() {
+        // SHA-256計算用関数 (ブラウザ標準API)
+        async function sha256(message) {
+            const msgBuffer = new TextEncoder().encode(message);
+            const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+            const hashArray = Array.from(new Uint8Array(hashBuffer));
+            return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        }
+
+        async function assembleData() {
             isComplete = true;
-            document.getElementById('status').innerText = "TRANSMISSION COMPLETE";
-            document.getElementById('status').style.color = "#0ff";
+            const statusElem = document.getElementById('status');
+            statusElem.innerText = "Verifying Integrity...";
             
-            // 順番通りに結合
             let combinedBase64 = "";
             for (let i = 0; i < totalChunks; i++) {
                 combinedBase64 += receivedChunks[i];
             }
 
             try {
-                // Base64デコード (Unicode文字化け対策)
                 const binString = atob(combinedBase64);
                 const bytes = Uint8Array.from(binString, m => m.codePointAt(0));
                 const decoder = new TextDecoder('utf-8');
                 const finalString = decoder.decode(bytes);
+
+                // ハッシュ検証を実行
+                const calculatedHash = await sha256(finalString);
+
+                if (calculatedHash === expectedHash) {
+                    // --- 成功 ---
+                    statusElem.innerText = "✅ VERIFIED SUCCESS";
+                    statusElem.style.color = "#0f0"; // 緑
+                    statusElem.style.fontWeight = "bold";
+                    document.getElementById('result').value = finalString;
+                } else {
+                    // --- 失敗 ---
+                    statusElem.innerText = "❌ HASH MISMATCH!";
+                    statusElem.style.color = "#f00"; // 赤
+                    document.getElementById('result').value = "ERROR: Data corruption detected.\n" +
+                        "Expected: " + expectedHash + "\n" +
+                        "Calculated: " + calculatedHash;
+                }
                 
-                document.getElementById('result').value = finalString;
-                
-                // ここでスキャン停止
                 html5QrcodeScanner.clear();
             } catch (e) {
-                document.getElementById('result').value = "Error decoding Base64: " + e.message;
+                statusElem.innerText = "Decode Error";
+                document.getElementById('result').value = "Error: " + e.message;
             }
         }
         
