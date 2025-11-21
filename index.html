@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stealth Receiver</title>
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        body { font-family: monospace; background: #111; color: #0f0; padding: 20px; text-align: center; }
+        #reader { width: 100%; max-width: 500px; margin: 0 auto; border: 2px solid #0f0; }
+        #status { margin-top: 10px; font-size: 1.2em; }
+        #result { width: 90%; height: 200px; background: #222; color: #fff; border: 1px solid #444; margin-top: 20px; padding: 10px; }
+        .progress-bar { width: 90%; height: 20px; background: #333; margin: 10px auto; position: relative; }
+        .progress-fill { height: 100%; background: #0f0; width: 0%; transition: width 0.2s; }
+        button { background: #0f0; color: #000; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+    <h2>OPTICAL DATA RECEIVER</h2>
+    <div id="reader"></div>
+    <div id="status">Waiting for signal...</div>
+    
+    <div class="progress-bar">
+        <div class="progress-fill" id="progress"></div>
+    </div>
+    <div id="chunk-info">0 / 0 chunks</div>
+
+    <textarea id="result" placeholder="Decoded data will appear here..."></textarea>
+    <br>
+    <button onclick="copyToClipboard()">Copy Data</button>
+
+    <script>
+        let receivedChunks = {};
+        let totalChunks = 0;
+        let isComplete = false;
+
+        function onScanSuccess(decodedText, decodedResult) {
+            if (isComplete) return;
+
+            try {
+                const data = JSON.parse(decodedText);
+                // 期待するフォーマット: { i: index, t: total, d: data_chunk }
+                
+                if (data.i !== undefined && data.t !== undefined && data.d !== undefined) {
+                    if (totalChunks === 0) totalChunks = data.t;
+                    
+                    if (!receivedChunks[data.i]) {
+                        receivedChunks[data.i] = data.d;
+                        updateProgress();
+                    }
+                }
+            } catch (e) {
+                // JSONじゃないQRは無視
+                console.log("Invalid QR format");
+            }
+        }
+
+        function updateProgress() {
+            const count = Object.keys(receivedChunks).length;
+            document.getElementById('chunk-info').innerText = `${count} / ${totalChunks} chunks`;
+            
+            const percent = (count / totalChunks) * 100;
+            document.getElementById('progress').style.width = percent + "%";
+
+            if (count === totalChunks && totalChunks > 0) {
+                assembleData();
+            }
+        }
+
+        function assembleData() {
+            isComplete = true;
+            document.getElementById('status').innerText = "TRANSMISSION COMPLETE";
+            document.getElementById('status').style.color = "#0ff";
+            
+            // 順番通りに結合
+            let combinedBase64 = "";
+            for (let i = 0; i < totalChunks; i++) {
+                combinedBase64 += receivedChunks[i];
+            }
+
+            try {
+                // Base64デコード (Unicode文字化け対策)
+                const binString = atob(combinedBase64);
+                const bytes = Uint8Array.from(binString, m => m.codePointAt(0));
+                const decoder = new TextDecoder('utf-8');
+                const finalString = decoder.decode(bytes);
+                
+                document.getElementById('result').value = finalString;
+                
+                // ここでスキャン停止
+                html5QrcodeScanner.clear();
+            } catch (e) {
+                document.getElementById('result').value = "Error decoding Base64: " + e.message;
+            }
+        }
+        
+        function copyToClipboard() {
+            const copyText = document.getElementById("result");
+            copyText.select();
+            document.execCommand("copy");
+            alert("Copied to clipboard!");
+        }
+
+        const html5QrcodeScanner = new Html5QrcodeScanner(
+            "reader", { fps: 30, qrbox: 250 });
+        html5QrcodeScanner.render(onScanSuccess);
+    </script>
+</body>
+</html>
