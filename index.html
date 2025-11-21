@@ -81,7 +81,7 @@ let receivedChunks = {};
         async function assembleData() {
             isComplete = true;
             const statusElem = document.getElementById('status');
-            statusElem.innerText = "Verifying Integrity...";
+            statusElem.innerText = "Processing...";
             
             let combinedBase64 = "";
             for (let i = 0; i < totalChunks; i++) {
@@ -94,22 +94,26 @@ let receivedChunks = {};
                 const decoder = new TextDecoder('utf-8');
                 const finalString = decoder.decode(bytes);
 
-                // ハッシュ検証を実行
-                const calculatedHash = await sha256(finalString);
+                // 結果を表示（検証前とりあえず表示）
+                document.getElementById('result').value = finalString;
 
-                if (calculatedHash === expectedHash) {
-                    // --- 成功 ---
-                    statusElem.innerText = "✅ VERIFIED SUCCESS";
-                    statusElem.style.color = "#0f0"; // 緑
-                    statusElem.style.fontWeight = "bold";
-                    document.getElementById('result').value = finalString;
+                // --- 分岐ロジック ---
+                if (!expectedHash) {
+                    // ケース1: 送信側からハッシュが送られてこなかった場合
+                    statusElem.innerText = "⚠️ NO HASH PROVIDED (Verification Skipped)";
+                    statusElem.style.color = "#ff0"; // 黄色で注意喚起
                 } else {
-                    // --- 失敗 ---
-                    statusElem.innerText = "❌ HASH MISMATCH!";
-                    statusElem.style.color = "#f00"; // 赤
-                    document.getElementById('result').value = "ERROR: Data corruption detected.\n" +
-                        "Expected: " + expectedHash + "\n" +
-                        "Calculated: " + calculatedHash;
+                    // ケース2: ハッシュが送られてきたので検証する場合
+                    const calculatedHash = await sha256(finalString);
+                    
+                    if (calculatedHash === expectedHash) {
+                        statusElem.innerText = "✅ VERIFIED SUCCESS";
+                        statusElem.style.color = "#0f0"; // 緑
+                    } else {
+                        statusElem.innerText = "❌ HASH MISMATCH!";
+                        statusElem.style.color = "#f00"; // 赤
+                        alert("警告: データの整合性が取れませんでした。一部破損している可能性があります。");
+                    }
                 }
                 
                 html5QrcodeScanner.clear();
